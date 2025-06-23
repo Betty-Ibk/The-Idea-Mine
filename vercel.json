@@ -1,0 +1,7 @@
+{
+  "public": true,
+  "outputDirectory": "dist/Tech-Ideation-Mine/browser",
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}
