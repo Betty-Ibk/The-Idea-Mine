@@ -34,7 +34,7 @@ import { Subscription } from 'rxjs';
             <div class="logo">
               <img src="assets/images/gtco-logo.png" alt="GTCO Logo" class="logo-image">
               <div class="logo-text-container">
-                <span class="logo-text">IDEATION</span>
+                <span class="logo-text">IDEA</span>
                 <span class="logo-subtitle"> Mine</span>
               </div>
             </div>
@@ -648,7 +648,7 @@ export class NavbarComponent implements OnInit {
   isMenuOpen = false;
   isUserMenuOpen = false;
   isLargeScreen = false;
-  defaultProfileImage = 'https://randomuser.me/api/portraits/women/33.jpg';
+  defaultProfileImage = "assets/images/light-idea.jpg";
   theme$ = this.themeService.theme$;
   currentUser: any = null;
   isAdmin: boolean = false;
