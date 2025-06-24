@@ -115,14 +115,17 @@ export class AdminMyIdeasComponent implements OnInit, OnDestroy {
   
   ngOnInit(): void {
     this.currentUser = this.authService.getCurrentUser();
-    
+    if (!this.currentUser) {
+      this.myIdeas = [];
+      this.selectedIdea = null;
+      window.location.href = '/login'; // Always redirect to login if not authenticated
+      return;
+    }
     // Use the hardcoded dummy data
     console.log('Using hardcoded admin ideas:', this.myIdeas);
-    
     // Apply dark mode styling immediately without setTimeout
     this.themeUtils.applyDarkModeStyles('.idea-card, .comments-modal, .comment-item');
     this.themeUtils.setupThemeChangeListener('.idea-card, .comments-modal, .comment-item');
-    
     // Subscribe to newly submitted ideas
     this.listenForNewIdeas();
     // Subscribe to idea refresh
@@ -141,6 +144,28 @@ export class AdminMyIdeasComponent implements OnInit, OnDestroy {
     this.selectedIdea = idea;
     this.currentPage = 0;
     this.calculateTotalPages();
+    
+    // Load comments from the API
+    this.ideaService.getComments(idea.id).subscribe({
+      next: (comments: any) => {
+        console.log('Comments loaded:', comments);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = Array.isArray(comments) ? comments.map((comment: any) => ({
+            text: comment.text,
+            authorId: comment.userId || comment.authorHash || comment.user?.id,
+            authorName: comment.user?.name || comment.author || 'Anonymous',
+            timestamp: comment.createdAt || comment.timestamp
+          })) : [];
+          this.calculateTotalPages();
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load comments', err);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = [];
+        }
+      }
+    });
   }
   
   closeCommentsModal(): void {
@@ -179,25 +204,80 @@ export class AdminMyIdeasComponent implements OnInit, OnDestroy {
   }
   
   vote(idea: any, voteType: 'up' | 'down'): void {
+    // Optimistic UI update for immediate feedback
+    const previousVote = idea.userVote;
+    const previousUpvotes = idea.upvotes || 0;
+    const previousDownvotes = idea.downvotes || 0;
+    
+    if (idea.userVote === voteType) {
+      // If clicking the same vote type, remove the vote
+      if (voteType === 'up') {
+        idea.upvotes = Math.max(0, previousUpvotes - 1);
+      } else {
+        idea.downvotes = Math.max(0, previousDownvotes - 1);
+      }
+      idea.userVote = null;
+    } else {
+      // If switching vote or voting for the first time
+      if (voteType === 'up') {
+        idea.upvotes = previousUpvotes + 1;
+        if (previousVote === 'down') {
+          idea.downvotes = Math.max(0, previousDownvotes - 1);
+        }
+      } else {
+        idea.downvotes = previousDownvotes + 1;
+        if (previousVote === 'up') {
+          idea.upvotes = Math.max(0, previousUpvotes - 1);
+        }
+      }
+      idea.userVote = voteType;
+    }
+
     this.ideaService.voteIdea(idea.id, voteType === 'up').subscribe({
-      next: () => {
-        this.listenForNewIdeas(); // Re-fetch ideas from backend after voting
+      next: (response) => {
+        console.log('Vote successful:', response);
+        // Optionally update with backend response if it returns updated vote counts
+        if (response && response.upvotes !== undefined) {
+          idea.upvotes = response.upvotes;
+          idea.downvotes = response.downvotes;
+          idea.userVote = response.userVote;
+        }
       },
       error: (err) => {
         console.error('Vote failed', err);
+        // Revert optimistic update on error
+        idea.userVote = previousVote;
+        idea.upvotes = previousUpvotes;
+        idea.downvotes = previousDownvotes;
       }
     });
   }
   
   addComment(): void {
     if (!this.selectedIdea || !this.newComment.trim() || !this.currentUser) return;
-    this.ideaService.addComment(this.selectedIdea.id, this.newComment.trim()).subscribe({
-      next: () => {
-        this.listenForNewIdeas(); // Re-fetch ideas/comments after commenting
-        this.closeCommentsModal();
+    
+    const commentText = this.newComment.trim();
+    this.newComment = ''; // Clear input immediately for better UX
+    
+    this.ideaService.addComment(this.selectedIdea.id, commentText).subscribe({
+      next: (newComment) => {
+        console.log('Comment added successfully:', newComment);
+        // Add the new comment to the list
+        if (this.selectedIdea && this.selectedIdea.commentsList) {
+          this.selectedIdea.commentsList.unshift({
+            text: newComment.text,
+            authorId: this.currentUser.id || 'EMP1000',
+            authorName: this.currentUser.name || 'Admin',
+            timestamp: 'Just now'
+          });
+          this.calculateTotalPages();
+          this.currentPage = 0; // Go to first page to see the new comment
+        }
       },
       error: (err) => {
         console.error('Add comment failed', err);
+        // Restore the comment text if it failed
+        this.newComment = commentText;
       }
     });
   }

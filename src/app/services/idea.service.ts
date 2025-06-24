@@ -25,6 +25,7 @@ export interface IdeaPost {
   requiredResources?: string;
   impact?: string;
   category?: string; // Add category field
+  commentCount?: number;
 }
 
 export interface Comment {
@@ -163,6 +164,14 @@ export class IdeaService {
 
   getUserProgress(): Observable<any> {
     return this.http.get<any>(`${this.apiUrl}/dashboard/progress`);
+  }
+
+  /**
+   * Get comments for a specific idea using the API endpoint.
+   * @param ideaId The ID of the idea
+   */
+  getComments(ideaId: number): Observable<any> {
+    return this.http.get(`${this.apiUrl}/comment/${ideaId}`);
   }
 }
 

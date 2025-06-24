@@ -22,13 +22,7 @@ export const adminGuard = () => {
     return true;
   }
   
-  // If logged in but not admin, redirect to dashboard
-  if (authService.isLoggedIn()) {
-    console.log('User is logged in but not an admin');
-    return router.parseUrl('/dashboard');
-  }
-  
-  // Otherwise redirect to login
-  console.log('User is not logged in, redirecting to login');
+  // For any non-admin (even if logged in), redirect to login
+  console.log('User is not an admin or not logged in, redirecting to login');
   return router.parseUrl('/login');
 };

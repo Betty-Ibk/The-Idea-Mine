@@ -23,6 +23,7 @@ interface Idea {
   upvotes: number;
   downvotes: number;
   comments: number;
+  commentCount: number;
   author: string;
   authorId: string;
   timestamp: string;
@@ -108,7 +109,7 @@ interface Idea {
                   👎 {{idea.downvotes}}
                 </button>
                 <button class="comment-button" (click)="viewComments(idea)">
-                  💬 {{idea.commentsList.length}}
+                  💬 {{idea.commentCount || 0}}
                 </button>
               </div>
             </div>
@@ -778,12 +779,57 @@ export class IdeaListComponent implements OnInit, OnDestroy {
   }
 
   vote(idea: Idea, voteType: 'up' | 'down') {
+    // Optimistic UI update for immediate feedback
+    const previousVote = idea.userVote;
+    const previousUpvotes = idea.upvotes || 0;
+    const previousDownvotes = idea.downvotes || 0;
+    
+    if (idea.userVote === voteType) {
+      // If clicking the same vote type, remove the vote
+      if (voteType === 'up') {
+        idea.upvotes = Math.max(0, previousUpvotes - 1);
+      } else {
+        idea.downvotes = Math.max(0, previousDownvotes - 1);
+      }
+      idea.userVote = null;
+    } else {
+      // If switching vote or voting for the first time
+      if (voteType === 'up') {
+        idea.upvotes = previousUpvotes + 1;
+        if (previousVote === 'down') {
+          idea.downvotes = Math.max(0, previousDownvotes - 1);
+        }
+      } else {
+        idea.downvotes = previousDownvotes + 1;
+        if (previousVote === 'up') {
+          idea.upvotes = Math.max(0, previousUpvotes - 1);
+        }
+      }
+      idea.userVote = voteType;
+    }
+
     this.ideaService.voteIdea(idea.id, voteType === 'up').subscribe({
-      next: () => {
-        this.loadRecentIdeas(); // Re-fetch ideas from backend after voting
+      next: (response) => {
+        console.log('Vote API response:', response);
+        // Update with backend response to ensure accuracy
+        if (response) {
+          const newUpvotes = response.upvotes || response.upVotes;
+          const newDownvotes = response.downvotes || response.downVotes;
+          const newUserVote = response.userVote;
+          
+          console.log(`Backend response - upvotes: ${newUpvotes}, downvotes: ${newDownvotes}, userVote: ${newUserVote}`);
+          
+          if (newUpvotes !== undefined) idea.upvotes = newUpvotes;
+          if (newDownvotes !== undefined) idea.downvotes = newDownvotes;
+          if (newUserVote !== undefined) idea.userVote = newUserVote;
+        }
       },
       error: (err) => {
         console.error('Vote failed', err);
+        // Revert optimistic update on error
+        idea.userVote = previousVote;
+        idea.upvotes = previousUpvotes;
+        idea.downvotes = previousDownvotes;
       }
     });
   }
@@ -793,6 +839,29 @@ export class IdeaListComponent implements OnInit, OnDestroy {
     this.currentPage = 0;
     this.calculateTotalPages();
     this.newComment = '';
+    
+    // Load comments from the API
+    this.ideaService.getComments(idea.id).subscribe({
+      next: (comments: any) => {
+        console.log('Comments loaded:', comments);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = Array.isArray(comments) ? comments.map((comment: any) => ({
+            text: comment.text,
+            author: comment.user?.name || comment.author || 'Anonymous',
+            authorId: comment.userId || comment.authorHash || comment.user?.id,
+            timestamp: comment.createdAt || comment.timestamp
+          })) : [];
+          this.selectedIdea.commentCount = this.selectedIdea.commentsList.length;
+          this.calculateTotalPages();
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load comments', err);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = [];
+        }
+      }
+    });
   }
 
   closeCommentsModal() {
@@ -830,13 +899,32 @@ export class IdeaListComponent implements OnInit, OnDestroy {
   
   addComment(): void {
     if (!this.selectedIdea || !this.newComment.trim() || !this.currentUser) return;
-    this.ideaService.addComment(this.selectedIdea.id, this.newComment.trim()).subscribe({
-      next: () => {
-        this.loadRecentIdeas(); // Re-fetch ideas/comments after commenting
-        this.closeCommentsModal();
+    
+    const commentText = this.newComment.trim();
+    this.newComment = ''; // Clear input immediately for better UX
+    
+    this.ideaService.addComment(this.selectedIdea.id, commentText).subscribe({
+      next: (newComment) => {
+        console.log('Comment added successfully:', newComment);
+        // Reload comments from API to get updated count and ensure consistency
+        this.ideaService.getComments(this.selectedIdea!.id).subscribe((comments: any) => {
+          if (this.selectedIdea) {
+            this.selectedIdea.commentsList = Array.isArray(comments) ? comments.map((comment: any) => ({
+              text: comment.text,
+              author: comment.user?.name || comment.author || 'Anonymous',
+              authorId: comment.userId || comment.authorHash || comment.user?.id,
+              timestamp: comment.createdAt || comment.timestamp
+            })) : [];
+            this.selectedIdea.commentCount = this.selectedIdea.commentsList.length;
+            this.calculateTotalPages();
+            this.currentPage = 0; // Go to first page to see the new comment
+          }
+        });
       },
       error: (err) => {
         console.error('Add comment failed', err);
+        // Restore the comment text if it failed
+        this.newComment = commentText;
       }
     });
   }
@@ -953,6 +1041,7 @@ export class IdeaListComponent implements OnInit, OnDestroy {
           upvotes: idea.upVotes || idea.upvotes || 0,
           downvotes: idea.downVotes || idea.downvotes || 0,
           comments: idea.commentCount || idea.comments?.length || 0,
+          commentCount: idea.commentCount || 0,
           author: this.getDisplayName(idea.anonymousId || idea.authorHash, 'Anonymous'),
           authorId: idea.anonymousId || idea.authorHash,
           timestamp: idea.createdAt || idea.timestamp,

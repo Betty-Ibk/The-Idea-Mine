@@ -26,6 +26,7 @@ interface Idea {
   userVote: 'up' | 'down' | null;
   authorId: string;
   authorName: string;
+  tags: string[];
   commentsList: Comment[];
 }
 
@@ -45,6 +46,15 @@ interface Idea {
                   <h3 class="idea-title">{{idea.title}}</h3>
                   <span class="idea-status" [class]="idea.status">{{idea.status}}</span>
                 </div>
+                
+                @if (idea.tags && idea.tags.length > 0) {
+                  <div class="idea-tags">
+                    @for (tag of idea.tags; track tag) {
+                        <span class="idea-tag">#{{ tag }}</span>
+                    }
+                  </div>
+                }
+                
                 <p class="idea-description">{{idea.description}}</p>
                 <div class="idea-meta">
                   <span class="timestamp">{{idea.timestamp}} by {{getDisplayName(idea.authorId, idea.authorName)}}</span>
@@ -202,6 +212,23 @@ interface Idea {
       color: var(--neutral-600);
       font-size: 0.875rem;
       margin-bottom: var(--space-2);
+    }
+    
+    .idea-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--space-1);
+      margin-bottom: var(--space-2);
+    }
+    
+    .idea-tag {
+      font-size: 0.75rem;
+      color: var(--primary-600);
+      background-color: var(--primary-50);
+      padding: 2px 8px;
+      border-radius: 12px;
+      display: inline-block;
+      margin-bottom: 4px;
     }
     
     .idea-meta {
@@ -564,6 +591,7 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
           this.loadIdeas();
         } else {
           this.myIdeas = [];
+          this.router.navigate(['/login']); // Always redirect to login if not authenticated
         }
       })
     );
@@ -665,6 +693,7 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
           userVote: idea.userVote || null,
           authorId: idea.anonymousId || idea.authorHash || employeeId, // Use anonymousId from backend
           authorName: idea.user?.name || 'User',
+          tags: idea.hashtags || idea.tags || [], // Map hashtags to tags for frontend compatibility
           commentsList: idea.comments ? idea.comments.map((comment: any) => ({
             text: comment.text,
             authorId: comment.userId || comment.authorHash || comment.user?.id,
@@ -699,6 +728,7 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
           userVote: idea.userVote || null,
           authorId: idea.authorHash || employeeId,
           authorName: 'User',
+          tags: idea.hashtags || idea.tags || [], // Map hashtags to tags for frontend compatibility
           commentsList: idea.comments || []
         }));
       }
@@ -729,12 +759,51 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
   }
   
   vote(idea: Idea, voteType: 'up' | 'down'): void {
+    // Optimistic UI update for immediate feedback
+    const previousVote = idea.userVote;
+    const previousUpvotes = idea.upvotes || 0;
+    const previousDownvotes = idea.downvotes || 0;
+    
+    if (idea.userVote === voteType) {
+      // If clicking the same vote type, remove the vote
+      if (voteType === 'up') {
+        idea.upvotes = Math.max(0, previousUpvotes - 1);
+      } else {
+        idea.downvotes = Math.max(0, previousDownvotes - 1);
+      }
+      idea.userVote = null;
+    } else {
+      // If switching vote or voting for the first time
+      if (voteType === 'up') {
+        idea.upvotes = previousUpvotes + 1;
+        if (previousVote === 'down') {
+          idea.downvotes = Math.max(0, previousDownvotes - 1);
+        }
+      } else {
+        idea.downvotes = previousDownvotes + 1;
+        if (previousVote === 'up') {
+          idea.upvotes = Math.max(0, previousUpvotes - 1);
+        }
+      }
+      idea.userVote = voteType;
+    }
+
     this.ideaService.voteIdea(idea.id, voteType === 'up').subscribe({
-      next: () => {
-        this.loadIdeas(); // Re-fetch ideas from backend after voting
+      next: (response) => {
+        console.log('Vote successful:', response);
+        // Optionally update with backend response if it returns updated vote counts
+        if (response && response.upvotes !== undefined) {
+          idea.upvotes = response.upvotes;
+          idea.downvotes = response.downvotes;
+          idea.userVote = response.userVote;
+        }
       },
       error: (err) => {
         console.error('Vote failed', err);
+        // Revert optimistic update on error
+        idea.userVote = previousVote;
+        idea.upvotes = previousUpvotes;
+        idea.downvotes = previousDownvotes;
       }
     });
   }
@@ -744,6 +813,28 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
     this.currentPage = 0;
     this.calculateTotalPages();
     this.newComment = '';
+    
+    // Load comments from the API
+    this.ideaService.getComments(idea.id).subscribe({
+      next: (comments: any) => {
+        console.log('Comments loaded:', comments);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = Array.isArray(comments) ? comments.map((comment: any) => ({
+            text: comment.text,
+            authorId: comment.userId || comment.authorHash || comment.user?.id,
+            authorName: comment.user?.name || comment.author || 'Anonymous',
+            timestamp: comment.createdAt || comment.timestamp
+          })) : [];
+          this.calculateTotalPages();
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load comments', err);
+        if (this.selectedIdea) {
+          this.selectedIdea.commentsList = [];
+        }
+      }
+    });
   }
   
   closeCommentsModal(): void {
@@ -781,13 +872,29 @@ export class MyIdeasComponent implements OnInit, OnDestroy {
   
   addComment(): void {
     if (!this.selectedIdea || !this.newComment.trim() || !this.currentUser) return;
-    this.ideaService.addComment(this.selectedIdea.id, this.newComment.trim()).subscribe({
-      next: () => {
-        this.loadIdeas(); // Re-fetch ideas/comments after commenting
-        this.closeCommentsModal();
+    
+    const commentText = this.newComment.trim();
+    this.newComment = ''; // Clear input immediately for better UX
+    
+    this.ideaService.addComment(this.selectedIdea.id, commentText).subscribe({
+      next: (newComment) => {
+        console.log('Comment added successfully:', newComment);
+        // Add the new comment to the list
+        if (this.selectedIdea && this.selectedIdea.commentsList) {
+          this.selectedIdea.commentsList.unshift({
+            text: newComment.text,
+            authorId: this.currentUser.id || 'EMP1001',
+            authorName: this.currentUser.name || 'Anonymous',
+            timestamp: 'Just now'
+          });
+          this.calculateTotalPages();
+          this.currentPage = 0; // Go to first page to see the new comment
+        }
       },
       error: (err) => {
         console.error('Add comment failed', err);
+        // Restore the comment text if it failed
+        this.newComment = commentText;
       }
     });
   }

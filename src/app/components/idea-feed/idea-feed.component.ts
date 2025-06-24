@@ -44,11 +44,15 @@ interface Comment {
           <div class="search-container">
             <input 
               type="text" 
-              placeholder="Search ideas..." 
+              placeholder="Search ideas, hashtags, or categories..." 
               class="search-input"
               [(ngModel)]="searchQuery"
               (input)="searchIdeas()"
+              (keyup.enter)="searchIdeas()"
             >
+            <button class="search-button" (click)="searchIdeas()">
+               Search
+            </button>
           </div>
         </div>
         
@@ -117,8 +121,11 @@ interface Comment {
                   👎 {{idea.downvotes || 0}}
                   </button>
                 <button class="comment-button" (click)="viewComments(idea)">
-                  💬 {{idea.comments?.length || 0}}
+                  💬 {{idea.commentCount || 0}}
                   </button>
+                <!-- <button class="details-button" (click)="viewIdeaDetails(idea)">
+                  View Details
+                  </button> -->
               </div>
             </div>
           }
@@ -165,6 +172,86 @@ interface Comment {
         </div>
       }
     </main>
+    
+    <!-- Idea Details Modal -->
+    @if (selectedIdeaForDetails) {
+      <div class="details-modal-overlay">
+        <div class="details-modal">
+          <div class="details-header">
+            <h2 class="details-title">{{ selectedIdeaForDetails.title }}</h2>
+            <button class="close-btn" (click)="closeDetailsModal()">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="18" height="18">
+                <path d="M19 6.41L17.59 5L12 10.59L6.41 5L5 6.41L10.59 12L5 17.59L6.41 19L12 13.41L17.59 19L19 17.59L13.41 12L19 6.41z"/>
+              </svg>
+            </button>
+          </div>
+          <div class="details-body">
+            <div class="idea-details">
+              <div class="idea-meta">
+                <span class="idea-author">By: {{getAnonymousDisplayName(selectedIdeaForDetails.authorHash)}}</span>
+                <span class="idea-time">{{selectedIdeaForDetails.timestamp}}</span>
+                <span class="idea-category">Category: {{selectedIdeaForDetails.category || 'N/A'}}</span>
+              </div>
+              
+              <div class="detail-section">
+                <h3 class="detail-title">Description</h3>
+                <div class="idea-content">
+                  <p>{{ selectedIdeaForDetails.description }}</p>
+                </div>
+              </div>
+              
+              @if (selectedIdeaForDetails.tags && selectedIdeaForDetails.tags.length > 0) {
+                <div class="detail-section">
+                  <h3 class="detail-title">Tags</h3>
+                  <div class="idea-tags">
+                    @for (tag of selectedIdeaForDetails.tags; track tag) {
+                      <span class="idea-tag">#{{ tag }}</span>
+                    }
+                  </div>
+                </div>
+              }
+              
+              @if (selectedIdeaForDetails.attachments && selectedIdeaForDetails.attachments.length > 0) {
+                <div class="detail-section">
+                  <h3 class="detail-title">Attachments ({{ selectedIdeaForDetails.attachments.length }})</h3>
+                  <div class="attachments-list">
+                    @for (attachment of selectedIdeaForDetails.attachments; track attachment.name) {
+                      <div class="attachment-item">
+                        <span class="attachment-icon">📎</span>
+                        <span class="attachment-name">{{ attachment.name }}</span>
+                        <span class="attachment-size">({{ formatFileSize(attachment.size) }})</span>
+                      </div>
+                    }
+                  </div>
+                </div>
+              }
+              
+              @if (selectedIdeaForDetails.requiredResources) {
+                <div class="detail-section">
+                  <h3 class="detail-title">Required Resources</h3>
+                  <p class="detail-value">{{ selectedIdeaForDetails.requiredResources }}</p>
+                </div>
+              }
+              
+              <div class="idea-stats">
+                <div class="stat">
+                  <span class="stat-label">Upvotes:</span>
+                  <span class="stat-value upvotes">{{selectedIdeaForDetails.upvotes || 0}}</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">Downvotes:</span>
+                  <span class="stat-value downvotes">{{selectedIdeaForDetails.downvotes || 0}}</span>
+                </div>
+                <div class="stat">
+                  <span class="stat-label">Comments:</span>
+                  <span class="stat-value">{{selectedIdeaForDetails.commentCount || 0}}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
   `,
   styles: [`
     .main-content {
@@ -217,15 +304,49 @@ interface Comment {
     
     .search-container {
       flex: 1;
-      max-width: 300px;
+      max-width: 400px;
+      display: flex;
+      gap: var(--space-2);
     }
     
     .search-input {
-      width: 100%;
+      flex: 1;
       padding: 8px 12px;
       border: 1px solid var(--neutral-300);
       border-radius: 4px;
       font-size: 0.875rem;
+    }
+    
+    .search-button {
+      padding: 8px 16px;
+      background-color: var(--primary-500);
+      color: white;
+      border: none;
+      border-radius: 4px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background-color 0.2s ease;
+      white-space: nowrap;
+    }
+    
+    .search-button:hover {
+      background-color: var(--primary-600);
+    }
+    
+    /* Dark theme support for search */
+    :host-context([data-theme="dark"]) .search-input {
+      background-color: var(--bg-tertiary);
+      color: var(--text-primary);
+      border-color: var(--border-color);
+    }
+    
+    :host-context([data-theme="dark"]) .search-button {
+      background-color: var(--primary-500);
+      color: white;
+    }
+    
+    :host-context([data-theme="dark"]) .search-button:hover {
+      background-color: var(--primary-600);
     }
     
     .idea-feed {
@@ -597,6 +718,155 @@ interface Comment {
       background-color: var(--primary-600);
     }
     
+    /* Details Button Styles */
+    .details-button {
+      padding: 4px 8px;
+      border: 1px solid var(--neutral-200);
+      border-radius: 4px;
+      background-color: white;
+      color: var(--neutral-700);
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.75rem;
+      min-width: 100px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: normal;
+      line-height: 1;
+    }
+    
+    .details-button:hover {
+      background-color: var(--neutral-50);
+      color: var(--primary-600);
+    }
+    
+    /* Details Button Styles - Orange Theme */
+    .details-button {
+      padding: 4px 8px;
+      border: 1px solid #FF7A00;
+      border-radius: 4px;
+      background-color: #FF7A00;
+      color: white;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: 0.75rem;
+      min-width: 100px;
+      height: 40px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: normal;
+      line-height: 1;
+    }
+    
+    .details-button:hover {
+      background-color: #e66a00;
+      border-color: #e66a00;
+      color: white;
+    }
+    
+    /* Details Modal Styles */
+    .details-modal-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.5);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      z-index: 1000;
+    }
+    
+    .details-modal {
+      background-color: white;
+      border-radius: 8px;
+      width: 90%;
+      max-width: 700px;
+      max-height: 85vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    
+    .details-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: var(--space-3);
+      border-bottom: 1px solid var(--neutral-200);
+    }
+    
+    .details-title {
+      margin: 0;
+      font-size: 1.25rem;
+      color: var(--neutral-800);
+    }
+    
+    .details-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--space-3);
+      max-height: 70vh;
+    }
+    
+    .idea-details {
+      display: flex;
+      flex-direction: column;
+      gap: var(--space-3);
+    }
+    
+    .detail-section {
+      border-bottom: 1px solid var(--neutral-100);
+      padding-bottom: var(--space-2);
+    }
+    
+    .detail-section:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+    
+    .detail-title {
+      font-size: 1rem;
+      color: var(--neutral-800);
+      margin-bottom: var(--space-2);
+      font-weight: 600;
+    }
+    
+    .engagement-stats {
+      display: flex;
+      gap: var(--space-4);
+      flex-wrap: wrap;
+    }
+    
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--neutral-600);
+      font-weight: 500;
+    }
+    
+    .stat-value {
+      font-size: 1rem;
+      font-weight: 600;
+    }
+    
+    .stat-value.upvotes {
+      color: var(--primary-600);
+    }
+    
+    .stat-value.downvotes {
+      color: #dc2626;
+    }
+    
     /* Enhanced Dark theme support */
     :host-context([data-theme="dark"]) .idea-card {
       background-color: var(--card-bg);
@@ -679,6 +949,39 @@ interface Comment {
     :host-context([data-theme="dark"]) .idea-time,
     :host-context([data-theme="dark"]) .comment-time {
       color: var(--text-tertiary);
+    }
+    
+    /* Dark theme support for details modal */
+    :host-context([data-theme="dark"]) .details-modal {
+      background-color: var(--bg-secondary);
+      color: var(--text-primary);
+    }
+    
+    :host-context([data-theme="dark"]) .details-title {
+      color: var(--text-primary);
+    }
+    
+    :host-context([data-theme="dark"]) .detail-title {
+      color: var(--text-primary);
+    }
+    
+    :host-context([data-theme="dark"]) .details-button {
+      background-color: var(--primary-500);
+      color: white;
+      border-color: var(--primary-600);
+    }
+    
+    :host-context([data-theme="dark"]) .details-button:hover {
+      background-color: var(--primary-600);
+      color: white;
+    }
+    
+    :host-context([data-theme="dark"]) .detail-section {
+      border-bottom-color: var(--border-color);
+    }
+    
+    :host-context([data-theme="dark"]) .stat-label {
+      color: var(--text-secondary);
     }
     
     @media (max-width: 640px) {
@@ -778,6 +1081,27 @@ interface Comment {
     margin-bottom: var(--space-2);
   }
   
+  /* Mobile styles for details modal */
+  .details-modal {
+    width: 95%;
+    height: 90vh;
+  }
+  
+  .details-body {
+    max-height: 75vh;
+  }
+  
+  .engagement-stats {
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+  
+  .details-button {
+    min-width: 80px;
+    font-size: 0.7rem;
+    padding: 6px 10px;
+  }
+  
   /* Dark mode mobile fixes */
   :host-context([data-theme="dark"]) .idea-author {
     border-top-color: var(--border-color);
@@ -789,7 +1113,7 @@ interface Comment {
 export class IdeaFeedComponent implements OnInit, OnDestroy {
   filteredIdeas: IdeaPost[] = [];
   ideas: IdeaPost[] = [];
-  categories: string[] = ['All', 'Welfare', 'Training', 'Technology', 'HR', 'Other'];
+  categories: string[] = ['All', 'Welfare', 'Customer', 'Technology', 'HR', 'Security', 'Other'];
   selectedCategory: string = 'All';
   searchQuery: string = '';
   private subscription: Subscription = new Subscription();
@@ -797,6 +1121,9 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
   // New properties for comments functionality
   selectedIdea: IdeaPost | null = null;
   newComment: string = '';
+  
+  // Add these properties for details modal
+  selectedIdeaForDetails: IdeaPost | null = null;
   
   // Add these properties
   isAdmin: boolean = false;
@@ -851,23 +1178,48 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
     this.filteredIdeas = this.ideas.filter(idea => {
       // Apply category filter
       if (this.selectedCategory !== 'All') {
-        // Ensure tags exist before filtering
+        // Check if the idea has the selected category as a tag
         const ideaTags = idea.tags || [];
         const hasCategoryTag = ideaTags.some(tag => 
-          tag.toLowerCase().includes(this.selectedCategory.toLowerCase())
+          tag.toLowerCase().includes(this.selectedCategory.toLowerCase()) ||
+          this.selectedCategory.toLowerCase().includes(tag.toLowerCase())
         );
-        if (!hasCategoryTag) return false;
+        
+        // Also check if the idea has a category field that matches
+        const ideaCategory = idea.category || '';
+        const categoryMatches = ideaCategory.toLowerCase().includes(this.selectedCategory.toLowerCase()) ||
+                               this.selectedCategory.toLowerCase().includes(ideaCategory.toLowerCase());
+        
+        if (!hasCategoryTag && !categoryMatches) return false;
       }
       
       // Apply search filter
-      if (this.searchQuery) {
-        const query = this.searchQuery.toLowerCase();
+      if (this.searchQuery.trim()) {
+        const query = this.searchQuery.toLowerCase().trim();
         const ideaTags = idea.tags || [];
-        return (
-          idea.title.toLowerCase().includes(query) ||
-          idea.description.toLowerCase().includes(query) ||
-          ideaTags.some(tag => tag.toLowerCase().includes(query))
-        );
+        
+        // Search in title
+        const titleMatches = idea.title.toLowerCase().includes(query);
+        
+        // Search in description
+        const descriptionMatches = idea.description.toLowerCase().includes(query);
+        
+        // Search in hashtags/tags (with or without # symbol)
+        const tagMatches = ideaTags.some(tag => {
+          const tagLower = tag.toLowerCase();
+          const queryWithoutHash = query.startsWith('#') ? query.substring(1) : query;
+          const tagWithoutHash = tagLower.startsWith('#') ? tagLower.substring(1) : tagLower;
+          
+          return tagLower.includes(query) || 
+                 tagWithoutHash.includes(queryWithoutHash) ||
+                 queryWithoutHash.includes(tagWithoutHash);
+        });
+        
+        // Search in category
+        const categoryMatches = (idea.category || '').toLowerCase().includes(query);
+        
+        // Return true if any field matches
+        return titleMatches || descriptionMatches || tagMatches || categoryMatches;
       }
       
       return true;
@@ -875,12 +1227,65 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
   }
   
   vote(idea: IdeaPost, voteType: 'up' | 'down'): void {
+    // Store previous values for potential rollback
+    const previousVote = idea.userVote;
+    const previousUpvotes = idea.upvotes || 0;
+    const previousDownvotes = idea.downvotes || 0;
+    
+    console.log(`Voting ${voteType} on idea ${idea.id}. Previous vote: ${previousVote}`);
+    
+    // Optimistic UI update for immediate feedback
+    if (idea.userVote === voteType) {
+      // If clicking the same vote type, remove the vote (toggle off)
+      if (voteType === 'up') {
+        idea.upvotes = Math.max(0, previousUpvotes - 1);
+      } else {
+        idea.downvotes = Math.max(0, previousDownvotes - 1);
+      }
+      idea.userVote = null;
+    } else {
+      // If switching vote or voting for the first time
+      if (voteType === 'up') {
+        idea.upvotes = previousUpvotes + 1;
+        // If user was previously downvoting, remove that downvote
+        if (previousVote === 'down') {
+          idea.downvotes = Math.max(0, previousDownvotes - 1);
+        }
+      } else {
+        idea.downvotes = previousDownvotes + 1;
+        // If user was previously upvoting, remove that upvote
+        if (previousVote === 'up') {
+          idea.upvotes = Math.max(0, previousUpvotes - 1);
+        }
+      }
+      idea.userVote = voteType;
+    }
+
+    console.log(`Optimistic update - upvotes: ${idea.upvotes}, downvotes: ${idea.downvotes}, userVote: ${idea.userVote}`);
+
+    // Call the backend to persist the vote
     this.ideaService.voteIdea(idea.id, voteType === 'up').subscribe({
       next: (response) => {
-        this.loadIdeas(); // Re-fetch ideas from backend after voting
+        console.log('Vote API response:', response);
+        // Update with backend response to ensure accuracy
+        if (response) {
+          const newUpvotes = response.upvotes || response.upVotes;
+          const newDownvotes = response.downvotes || response.downVotes;
+          const newUserVote = response.userVote;
+          
+          console.log(`Backend response - upvotes: ${newUpvotes}, downvotes: ${newDownvotes}, userVote: ${newUserVote}`);
+          
+          if (newUpvotes !== undefined) idea.upvotes = newUpvotes;
+          if (newDownvotes !== undefined) idea.downvotes = newDownvotes;
+          if (newUserVote !== undefined) idea.userVote = newUserVote;
+        }
       },
       error: (err) => {
         console.error('Vote failed', err);
+        // Revert optimistic update on error
+        idea.userVote = previousVote;
+        idea.upvotes = previousUpvotes;
+        idea.downvotes = previousDownvotes;
       }
     });
   }
@@ -899,10 +1304,23 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
     this.selectedIdea = idea;
     this.newComment = '';
     
-    // Initialize comments array if it doesn't exist
-    if (!this.selectedIdea.comments) {
-      this.selectedIdea.comments = [];
-    }
+    // Load comments from the API
+    this.ideaService.getComments(idea.id).subscribe({
+      next: (comments: any) => {
+        console.log('Comments loaded:', comments);
+        if (this.selectedIdea) {
+          this.selectedIdea.comments = Array.isArray(comments) ? comments : [];
+          this.selectedIdea.commentCount = this.selectedIdea.comments.length;
+        }
+      },
+      error: (err) => {
+        console.error('Failed to load comments', err);
+        if (this.selectedIdea) {
+          this.selectedIdea.comments = [];
+          this.selectedIdea.commentCount = 0;
+        }
+      }
+    });
   }
   
   closeCommentsModal(): void {
@@ -910,15 +1328,35 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
     this.newComment = '';
   }
   
+  viewIdeaDetails(idea: IdeaPost): void {
+    this.selectedIdeaForDetails = idea;
+  }
+  
+  closeDetailsModal(): void {
+    this.selectedIdeaForDetails = null;
+  }
+  
   addComment(): void {
     if (!this.selectedIdea || !this.newComment.trim()) return;
-    this.ideaService.addComment(this.selectedIdea.id, this.newComment.trim()).subscribe({
-      next: () => {
-        this.loadIdeas(); // Re-fetch ideas/comments after commenting
-        this.closeCommentsModal();
+    
+    const commentText = this.newComment.trim();
+    this.newComment = ''; // Clear input immediately for better UX
+    
+    this.ideaService.addComment(this.selectedIdea.id, commentText).subscribe({
+      next: (newComment) => {
+        console.log('Comment added successfully:', newComment);
+        // Reload comments from API to get updated count and ensure consistency
+        this.ideaService.getComments(this.selectedIdea!.id).subscribe((comments: any) => {
+          if (this.selectedIdea) {
+            this.selectedIdea.comments = Array.isArray(comments) ? comments : [];
+            this.selectedIdea.commentCount = this.selectedIdea.comments.length;
+          }
+        });
       },
       error: (err) => {
         console.error('Add comment failed', err);
+        // Restore the comment text if it failed
+        this.newComment = commentText;
       }
     });
   }
@@ -952,8 +1390,18 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
       if (!Array.isArray(ideas)) {
         ideas = [];
       }
-      this.ideas = ideas;
-      this.filteredIdeas = ideas;
+      
+      // Map API response to frontend format with proper vote and comment counts
+      this.ideas = ideas.map((idea: any) => ({
+        ...idea,
+        tags: idea.hashtags || idea.tags || [],
+        upvotes: idea.upVotes || idea.upvotes || 0,
+        downvotes: idea.downVotes || idea.downvotes || 0,
+        commentCount: idea.commentCount || 0,
+        userVote: idea.userVote || null
+      }));
+      
+      this.filteredIdeas = this.ideas;
       this.applyFilters();
     });
 
@@ -969,7 +1417,18 @@ export class IdeaFeedComponent implements OnInit, OnDestroy {
           if (!Array.isArray(userIdeas)) {
             userIdeas = [];
           }
-          this.ideas = [...this.ideas, ...userIdeas];
+          
+          // Map hashtags to tags for user ideas as well
+          const mappedUserIdeas = userIdeas.map((idea: any) => ({
+            ...idea,
+            tags: idea.hashtags || idea.tags || [],
+            upvotes: idea.upVotes || idea.upvotes || 0,
+            downvotes: idea.downVotes || idea.downvotes || 0,
+            commentCount: idea.commentCount || 0,
+            userVote: idea.userVote || null
+          }));
+          
+          this.ideas = [...this.ideas, ...mappedUserIdeas];
           this.filteredIdeas = [...this.ideas];
           this.applyFilters();
         });
